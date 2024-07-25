@@ -1,0 +1,14 @@
+class ProteinFlowMatching(nn.Module):
+    def __init__(self, flow_matching, decoder):
+        super().__init__()
+        self.flow_matching = flow_matching
+        self.decoder = decoder
+
+    def forward(self, scvi_embedding, timesteps, context):
+        latent = self.flow_matching(scvi_embedding, timesteps, context)
+        return self.decoder(latent)
+
+    @torch.no_grad()
+    def generate(self, scvi_embedding, context, guidance_scale=7.5, num_steps=25):
+        latent = self.flow_matching.euler_sample(context, scvi_embedding.shape, guidance_scale)
+        return self.decoder(latent)
