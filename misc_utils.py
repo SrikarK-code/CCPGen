@@ -1,3 +1,12 @@
+def Normalize(in_channels):
+    return torch.nn.GroupNorm(num_groups=32, num_channels=in_channels, eps=1e-6, affine=True)
+
+def count_flops_attn(model, _x, y):
+    b, c, *spatial = y[0].shape
+    num_spatial = int(np.prod(spatial))
+    matmul_ops = 2 * b * (num_spatial**2) * c
+    model.total_ops += torch.DoubleTensor([matmul_ops])
+
 def timestep_embedding(timesteps, dim, max_period=10000):
     half = dim // 2
     freqs = torch.exp(
