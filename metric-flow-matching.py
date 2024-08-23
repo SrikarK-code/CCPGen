@@ -146,20 +146,17 @@ def sample_mfm(mfm, scvi_latent, t_span=[0, 1], method='dopri5'):
     traj = odeint(ode_func, scvi_latent, t, method=method)
     return traj[-1]
 
-# Usage example
-scvi_dim = 50  # Example dimension
-prot_dim = 100  # Example dimension
-hidden_dim = 256
-K = 100  # Number of centers for RBF metric
 
+# how to use it
+scvi_dim = your_scvi_latent_dim
+prot_dim = your_prot_latent_dim
+hidden_dim = 256  # just for sake of example
+K = 100  # of centeres for rbf_metric
 mfm = MetricFlowMatching(scvi_dim, prot_dim, hidden_dim, K)
 
-# Assume scvi_latents and prot_latents are already encoded
 train_mfm(mfm, scvi_latents, prot_latents)
 
-# Generate new ProtT5 latents from scVI latents
-new_scvi_latent = scvi_encoder(new_scvi_data)  # Encode new scVI data
+new_scvi_latent = scvi_encoder(new_scvi_data)  
 new_prot_latent = sample_mfm(mfm, new_scvi_latent)
 
-# Decode new ProtT5 latent to sequence
 new_protein_sequence = prot_decoder(new_prot_latent)
