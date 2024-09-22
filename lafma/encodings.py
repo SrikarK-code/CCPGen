@@ -59,7 +59,7 @@ class SCVIEncodingModule:
             else:
                 print(f"No NaN values found in adata_copy.X for cell type: {cell_type}")
 
-            latent = adata_copy.obsm['X_scvi']
+            latent = adata_copy.obsm['X_diffmap']
             pseudotime = adata_copy.obs['dpt_pseudotime']
 
             # Store latent representation in the dictionary
