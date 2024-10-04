@@ -45,27 +45,17 @@ class ProtT5DecodingModule(nn.Module):
 class SCVIEncodingModule:
     def __init__(self):
         self.latent_representations = {}
-        self.pseudotime_representations = {}
 
     def encode(self, adata_dict):
         for cell_type, adata in adata_dict.items():
-            print(f"Training and embedding for cell type: {cell_type}...")
-
+            print(f"Encoding for cell type: {cell_type}...")
             adata_copy = adata.copy()
-
-            nan_count = np.isnan(adata_copy.X).sum()
-            if nan_count > 0:
-                print(f"There are {nan_count} NaN values in adata_copy.X for cell type: {cell_type}")
-            else:
-                print(f"No NaN values found in adata_copy.X for cell type: {cell_type}")
-
+            
+            # Use X_diffmap instead of dpt_pseudotime
             latent = adata_copy.obsm['X_diffmap']
-            pseudotime = adata_copy.obs['dpt_pseudotime']
-
+            
             # Store latent representation in the dictionary
             self.latent_representations[cell_type] = latent
-            self.pseudotime_representations[cell_type] = pseudotime
 
         print("Encoding completed.")
-
-        return self.latent_representations, self.pseudotime_representations
+        return self.latent_representations
