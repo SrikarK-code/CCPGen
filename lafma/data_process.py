@@ -42,15 +42,11 @@ def generate_random_protein_sequence(min_length=100, max_length=200):
 
 def prepare_data(adata_dict, protein_sequences, encoder):
     latent_list = []
-    pseudotime_list = []
     sequence_list = []
 
     for cell_type, latents in adata_dict.items():
-        pseudotimes = adata_dict[cell_type].obs['dpt_pseudotime']
-        for latent, pseudotime, sequence in zip(latents, pseudotimes, protein_sequences[cell_type]):
-            print(f"Cell type: {cell_type}, Latent shape: {latents.shape}, Sequence length: {len(sequence)}, Pseudotime shape: {pseudotimes.shape}")
+        for latent, sequence in zip(latents, protein_sequences[cell_type]):
             latent_list.append(latents)
-            pseudotime_list.append(pseudotimes)
             sequence_list.append(sequence)
 
     # Encode sequences using ProtT5
@@ -73,20 +69,8 @@ def prepare_data(adata_dict, protein_sequences, encoder):
     ]
     latent_tensor = torch.stack(padded_latent_list, dim=0)
 
-    # Process pseudotimes
-    pseudotime_tensor_list = [torch.tensor(pseudotime, dtype=torch.float32) for pseudotime in pseudotime_list]
-    pseudotime_tensor_list = [
-        pseudotime if len(pseudotime.shape) == 2 else pseudotime.unsqueeze(1) for pseudotime in pseudotime_tensor_list
-    ]
-    max_pseudotime_len = max(pseudotime.shape[0] for pseudotime in pseudotime_tensor_list)
-    padded_pseudotime_tensor_list = [
-        torch.cat([pseudotime, torch.zeros((max_pseudotime_len - pseudotime.shape[0], pseudotime.shape[1]), dtype=pseudotime.dtype)], dim=0)
-        if pseudotime.shape[0] < max_pseudotime_len else pseudotime for pseudotime in pseudotime_tensor_list
-    ]
-    pseudotime_tensor = torch.stack(padded_pseudotime_tensor_list, dim=0)
-
-    return latent_tensor, pseudotime_tensor, sequence_tensor
-
+    return latent_tensor, sequence_tensor
+    
 def create_dataloaders(latent_tensor, pseudotime_tensor, sequence_tensor, batch_size=2):
     full_dataset = TensorDataset(latent_tensor, pseudotime_tensor, sequence_tensor)
 
