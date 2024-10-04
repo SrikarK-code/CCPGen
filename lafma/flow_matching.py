@@ -28,30 +28,22 @@ class FlowMatchingTrainer(nn.Module):
         self.eps = 1e-3
         self.sigma_t = lambda t: (1.0 - t) * sigma_var
 
-    def forward(self, x_0, prot_target, c):
-        # x_0: scVI embeddings [batch_size, 1024, 50]
+    def forward(self, x_0, prot_target):
+        # x_0: X_diffmap embeddings [batch_size, diffmap_dim]
         # prot_target: ProtT5 embeddings [batch_size, seq_len, 1024]
-        # context: pseudotime or other context [batch_size, seq_len, context_dim=1]
-
-        # pad prot_target to match x_0's sequence length
-        pad_length = x_0.shape[1] - prot_target.shape[1]
-        prot_target_padded = F.pad(prot_target, (0, 0, 0, pad_length))
-
+        
+        # Expand x_0 to match prot_target's sequence length
+        x_0_expanded = x_0.unsqueeze(1).expand(-1, prot_target.shape[1], -1)
+        
         t = torch.rand(x_0.shape[0], device=x_0.device) * (self.T - self.eps) + self.eps
-        t_expand = t.view(-1, 1, 1).repeat(1, prot_target_padded.shape[1], prot_target_padded.shape[2])
-
-        c = c.to(x_0.device)
-
-        noise = torch.randn_like(prot_target_padded)
-        perturbed_target = t_expand * prot_target_padded + (1 - t_expand) * noise
-
-        model_out = self.model(x_0, t * 999, c)
-
-        loss = F.mse_loss(model_out, prot_target_padded, reduction="none").mean([1, 2]).mean()
-        if torch.isnan(loss).any():
-          print("NaN in loss computation")
-          print("Pred:", model_out)
-          print("Target:", prot_target_padded)
+        t_expand = t.view(-1, 1, 1).repeat(1, prot_target.shape[1], prot_target.shape[2])
+        
+        noise = torch.randn_like(prot_target)
+        perturbed_target = t_expand * prot_target + (1 - t_expand) * noise
+        
+        model_out = self.model(x_0_expanded, t * 999)
+        loss = F.mse_loss(model_out, prot_target, reduction="none").mean([1, 2]).mean()
+        
         return loss
 
     @torch.no_grad()
@@ -85,13 +77,12 @@ class ProteinFlowMatching(nn.Module):
         self.flow_matching = flow_matching
         self.decoder = decoder
 
-    def forward(self, x, target, context):
-        return self.flow_matching(x, target, context) # training: loss from the flowmatching module
+    def forward(self, x, target):
+        return self.flow_matching(x, target)  # training: loss from the flowmatching module
 
-    def generate(self, x, context, num_steps=200):
+    def generate(self, x, num_steps=200):
         device = next(self.parameters()).device
         x = x.to(device)
-        context = context.to(device)
-        latent = self.flow_matching.euler_sample(context, x.shape, guidance_scale=3.0)[0]
+        latent = self.flow_matching.euler_sample(x, (x.shape[0], num_steps, self.flow_matching.model.out_channels), guidance_scale=3.0)[0]
         protein_sequence = self.decoder(latent, max_length=num_steps)
         return protein_sequence
