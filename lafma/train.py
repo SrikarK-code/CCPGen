@@ -20,11 +20,11 @@ def train(num_epochs=1, learning_rate=1e-5, batch_size=2):
     scvi_encoder = SCVIEncodingModule()
 
     # Encode data
-    scvi_latents, scvi_pseudotimes = scvi_encoder.encode(adata_dict)
-    latent_tensor, pseudotime_tensor, sequence_tensor = prepare_data(scvi_latents, scvi_pseudotimes, protein_sequences, prot_encoder)
+    scvi_latents = scvi_encoder.encode(adata_dict)
+    latent_tensor, sequence_tensor = prepare_data(scvi_latents, protein_sequences, prot_encoder)
 
     # Create dataloaders
-    train_dataloader, val_dataloader = create_dataloaders(latent_tensor, pseudotime_tensor, sequence_tensor, batch_size)
+    train_dataloader, val_dataloader = create_dataloaders(latent_tensor, sequence_tensor, batch_size)
 
     # Initialize models
     unet = CustomUNet1D(
@@ -50,25 +50,15 @@ def train(num_epochs=1, learning_rate=1e-5, batch_size=2):
     # Training loop
     best_val_loss = float('inf')
 
-    def prepare_pseudotime(pseudotime):
-        pseudotime = torch.where(torch.isnan(pseudotime), torch.tensor(-1000.0).to(pseudotime.device), pseudotime)
-        mask = (pseudotime != -1000).float()
-        return pseudotime, mask
-
     for epoch in range(num_epochs):
         model.train()
         train_loss = 0
-        for scvi_latent, pseudotime, protein_seq in train_dataloader:
+        for scvi_latent, protein_seq in train_dataloader:
             scvi_latent = scvi_latent.to(device)
-            pseudotime = pseudotime.to(device)
             protein_seq = protein_seq.to(device)
 
-            scvi_latent = scvi_latent.detach().clone()
-            pseudotime, pseudotime_mask = prepare_pseudotime(pseudotime.detach().clone())
-            protein_seq = protein_seq.detach().clone()
-
             optimizer.zero_grad()
-            loss = model(scvi_latent, protein_seq, pseudotime)
+            loss = model(scvi_latent, protein_seq)
             loss.backward()
 
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
@@ -85,9 +75,8 @@ def train(num_epochs=1, learning_rate=1e-5, batch_size=2):
         with torch.no_grad():
             for scvi_latent, pseudotime, protein_seq in val_dataloader:
                 scvi_latent = scvi_latent.to(device)
-                pseudotime, pseudotime_mask = prepare_pseudotime(pseudotime.detach().clone())
                 protein_seq = protein_seq.to(device)
-                loss = model(scvi_latent, protein_seq, pseudotime)
+                loss = model(scvi_latent, protein_seq)
                 val_loss += loss.item()
 
         avg_val_loss = val_loss / len(val_dataloader)
@@ -103,9 +92,8 @@ def train(num_epochs=1, learning_rate=1e-5, batch_size=2):
     # Generate new protein sequences
     model.eval()
     with torch.no_grad():
-        scvi_latent = torch.randn(2, 2000, 50).to(device)  # random scVI latent with batch size
-        pseudotime = torch.rand(2, 2000, 1).to(device)  # random pseudotime with batch size
-        generated_sequence = model.generate(scvi_latent, pseudotime)
+        scvi_latent = torch.randn(2, scvi_latents[list(scvi_latents.keys())[0]].shape[1]).to(device)  # random scVI latent with batch size
+        generated_sequence = model.generate(scvi_latent)
         print("Generated sequence:", generated_sequence)
 
 if __name__ == "__main__":
