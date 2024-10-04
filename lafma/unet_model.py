@@ -14,7 +14,6 @@ class CustomUNet1D(nn.Module):
         use_scale_shift_norm=False,
         use_spatial_transformer=False,
         transformer_depth=1,
-        context_dim=1,
     ):
         super().__init__()
         self.in_channels = in_channels
@@ -28,10 +27,6 @@ class CustomUNet1D(nn.Module):
         self.use_checkpoint = use_checkpoint
         self.num_heads = num_heads
         self.use_spatial_transformer = use_spatial_transformer
-        self.context_dim = context_dim
-
-        self.context_proj = nn.Linear(context_dim, model_channels)
-        self.final_proj = nn.Linear(model_channels * 2, out_channels)  # *2 to account for concatenated context
 
         time_embed_dim = model_channels * 4
         self.time_embed = nn.Sequential(
@@ -63,7 +58,7 @@ class CustomUNet1D(nn.Module):
                     if use_spatial_transformer:
                         layers.append(
                             SpatialTransformer(
-                                ch, num_heads, context_dim, depth=transformer_depth
+                                ch, num_heads, ch // num_heads, depth=transformer_depth
                             )
                         )
                     else:
@@ -85,7 +80,7 @@ class CustomUNet1D(nn.Module):
                 use_scale_shift_norm=use_scale_shift_norm,
             ),
             AttentionBlock(ch, num_heads=num_heads) if not use_spatial_transformer else
-            SpatialTransformer(ch, num_heads, context_dim, depth=transformer_depth),
+            SpatialTransformer(ch, num_heads, ch // num_heads, depth=transformer_depth),
             ResBlock(
                 ch,
                 time_embed_dim,
@@ -111,7 +106,7 @@ class CustomUNet1D(nn.Module):
                     if use_spatial_transformer:
                         layers.append(
                             SpatialTransformer(
-                                ch, num_heads, context_dim, depth=transformer_depth
+                                ch, num_heads, ch // num_heads, depth=transformer_depth
                             )
                         )
                     else:
@@ -127,58 +122,21 @@ class CustomUNet1D(nn.Module):
             nn.Conv1d(ch, out_channels, 3, padding=1),
         )
 
-    def forward(self, x, timesteps, context=None):
+    def forward(self, x, timesteps):
         x = x.transpose(1, 2)  # transpose shape: [batch_size, emb_dim, seqlen]
         t_emb = self.time_embed(timestep_embedding(timesteps, self.model_channels))
 
         h = x
         hs = []
         for module in self.input_blocks:
-            if isinstance(module, nn.Conv1d):
-                h = module(h)
-            elif isinstance(module, SpatialTransformer):
-                h = module(h, context)
-            elif isinstance(module, ResBlock):
-                h = module(h, t_emb)
-            elif isinstance(module, nn.Sequential):
-                for submodule in module:
-                    if isinstance(submodule, ResBlock):
-                        h = submodule(h, t_emb)
-                    elif isinstance(submodule, SpatialTransformer):
-                        h = submodule(h, context)
-                    else:
-                        h = submodule(h)
-            else:
-                h = module(h)
+            h = module(h) if isinstance(module, nn.Conv1d) else module(h, t_emb)
             hs.append(h)
 
-        if isinstance(self.middle_block, nn.Sequential):
-            for submodule in self.middle_block:
-                if isinstance(submodule, ResBlock):
-                    h = submodule(h, t_emb)
-                elif isinstance(submodule, SpatialTransformer):
-                    h = submodule(h, context)
-                else:
-                    h = submodule(h)
-        else:
-            h = self.middle_block(h)
+        h = self.middle_block(h)
 
         for module in self.output_blocks:
             h = torch.cat([h, hs.pop()], dim=1)
-            if isinstance(module, nn.Sequential):
-                for submodule in module:
-                    if isinstance(submodule, ResBlock):
-                        h = submodule(h, t_emb)
-                    elif isinstance(submodule, SpatialTransformer):
-                        h = submodule(h, context)
-                    else:
-                        h = submodule(h)
-            elif isinstance(module, SpatialTransformer):
-                h = module(h, context)
-            elif isinstance(module, ResBlock):
-                h = module(h, t_emb)
-            else:
-                h = module(h)
+            h = module(h)
 
         output = self.out(h) # [batch_size, model_channels, seq_len]
         output = output.transpose(1, 2)  # shape: [batch_size, seqlen, model_channels]
